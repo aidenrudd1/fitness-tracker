@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Gym Logger</title>
+
+  <!-- Supabase JS client — loaded directly from CDN, no install needed -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    /* ── TOKENS ──────────────────────────────────────────── */
+    :root {
+      --bg:         #0d0d0d;
+      --surface:    #1a1a1a;
+      --surface2:   #242424;
+      --border:     #2e2e2e;
+      --accent:     #c8f135;   /* sharp gym-chalk lime */
+      --accent-dim: #8aaa20;
+      --text:       #f0f0f0;
+      --muted:      #666;
+      --danger:     #ff4d4d;
+      --radius:     10px;
+      --font:       'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    /* ── RESET ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── LAYOUT ──────────────────────────────────────────── */
+    #app {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 0 0 120px;
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ──────────────────────────────────────────── */
+    header {
+      padding: 52px 20px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-label {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    #session-meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── SCREENS ─────────────────────────────────────────── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── SETUP SCREEN ────────────────────────────────────── */
+    #setup-screen { padding: 28px 20px; }
+    .setup-screen-title {
+      font-size: 13px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .pill-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .pill {
+      padding: 10px 18px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pill.selected {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+    }
+
+    .field-label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* ── PRIMARY BUTTON ──────────────────────────────────── */
+    .btn-primary {
+      width: 100%;
+      padding: 16px;
+      background: var(--accent);
+      color: #000;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary:active { opacity: 0.8; }
+    .btn-primary:disabled { opacity: 0.3; cursor: default; }
+
+    .btn-ghost {
+      width: 100%;
+      padding: 14px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      margin-top: 10px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── LOG SCREEN ──────────────────────────────────────── */
+    #log-screen { padding: 20px; }
+
+    .exercise-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .exercise-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .exercise-name {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .exercise-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .exercise-prev {
+      font-size: 11px;
+      color: var(--accent-dim);
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    /* set rows */
+    .set-row {
+      display: grid;
+      grid-template-columns: 32px 1fr 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .set-row:last-child { border-bottom: none; }
+    .set-num {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      font-weight: 600;
+    }
+    .set-num.warmup { color: var(--accent-dim); font-size: 10px; }
+
+    input[type="number"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 16px; /* 16px prevents iOS zoom */
+      font-family: var(--font);
+      padding: 9px 10px;
+      text-align: center;
+      -moz-appearance: textfield;
+    }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input[type="number"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .fail-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .fail-btn.active {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #fff;
+    }
+
+    .input-labels {
+      display: grid;
+      grid-template-columns: 32px 1fr 1fr auto;
+      gap: 8px;
+      padding: 6px 14px 0;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .input-labels span:last-child { width: 32px; text-align: center; }
+
+    /* session notes */
+    .notes-block {
+      margin-top: 20px;
+    }
+    textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 15px;
+      font-family: var(--font);
+      padding: 14px;
+      resize: none;
+      height: 80px;
+      margin-top: 8px;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+
+    /* RPE row */
+    .rpe-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .rpe-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .rpe-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+    .rpe-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      width: 24px;
+      text-align: center;
+    }
+
+    /* ── DONE SCREEN ─────────────────────────────────────── */
+    #done-screen {
+      padding: 60px 20px;
+      text-align: center;
+    }
+    .done-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+    #done-screen h2 {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    #done-screen p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    /* ── TOAST ───────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: 99px;
+      font-size: 14px;
+      opacity: 0;
+      transition: all 0.25s;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 99;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    #toast.error { border-color: var(--danger); color: var(--danger); }
+
+    /* ── STICKY FOOTER ───────────────────────────────────── */
+    .sticky-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0; right: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* ── SECTION DIVIDER ─────────────────────────────────── */
+    .section-label {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 24px 0 10px;
+    }
+    .section-label:first-child { margin-top: 0; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="header-label">Gym Logger</div>
+    <h1 id="header-title">Start Session</h1>
+    <div id="session-meta"></div>
+  </header>
+
+  <!-- ── SCREEN 1: SETUP ─────────────────────────────────── -->
+  <div id="setup-screen" class="screen active">
+    <p class="setup-screen-title">Configure today's session</p>
+
+    <div class="field-label">Day type</div>
+    <div class="pill-group" id="day-type-group">
+      <button class="pill" data-value="push">Push</button>
+      <button class="pill" data-value="pull">Pull</button>
+      <button class="pill" data-value="legs">Legs</button>
+    </div>
+
+    <div class="field-label">Rotation</div>
+    <div class="pill-group" id="rotation-group">
+      <button class="pill" data-value="A">A</button>
+      <button class="pill" data-value="B">B</button>
+    </div>
+
+    <button class="btn-primary" id="start-btn" disabled>Start Session →</button>
+  </div>
+
+  <!-- ── SCREEN 2: LOG ───────────────────────────────────── -->
+  <div id="log-screen" class="screen">
+    <div id="exercises-container"></div>
+
+    <div class="notes-block">
+      <div class="field-label">Session notes</div>
+      <textarea id="session-notes" placeholder="How did it feel? Anything to note..."></textarea>
+    </div>
+
+    <div class="rpe-row">
+      <label>Overall RPE</label>
+      <input type="range" id="session-rpe" min="1" max="10" value="7" />
+      <div class="rpe-val" id="rpe-display">7</div>
+    </div>
+
+    <div style="height: 80px;"></div><!-- spacer for sticky footer -->
+
+    <div class="sticky-footer">
+      <button class="btn-primary" id="finish-btn">Finish & Save Session</button>
+    </div>
+  </div>
+
+  <!-- ── SCREEN 3: DONE ──────────────────────────────────── -->
+  <div id="done-screen" class="screen">
+    <div class="done-icon">💪</div>
+    <h2>Session saved.</h2>
+    <p id="done-summary"></p>
+    <button class="btn-primary" id="new-session-btn">Log Another Session</button>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────────
+const SUPABASE_URL = 'https://owgyisrfwdhkknaaguxs.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93Z3lpc3Jmd2Roa2tuYWFndXhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTY3NDIsImV4cCI6MjA5Njk3Mjc0Mn0.0g6P_Npu5xmE_ZDCZYDz6nHNnsaqwKvRIY_A0SbOdvU'
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+// ── STATE ──────────────────────────────────────────────────
+let state = {
+  dayType: null,
+  rotation: null,
+  sessionId: null,
+  exercises: [],   // loaded from DB
+  setData: {}      // keyed by exercise_id, array of {weight, reps, failure}
+}
+
+// ── EXERCISE ORDER per day (matches your PPL plan) ─────────
+const EXERCISE_ORDER = {
+  push: [
+    'Incline Dumbbell Press',
+    'Weighted Dips',
+    'Cable Fly',
+    'Dumbbell Shoulder Press',
+    'Lateral Raises',
+    'EZ Bar Skull Crushers',
+    'Cable Pushdown (Rope)'
+  ],
+  pull: [
+    'Deadlift',
+    'Weighted Pull-ups',
+    'Bent-over Barbell Row',
+    'Lat Pulldown',
+    'Straight-Arm Cable Pulldown',
+    'Incline Dumbbell Curl',
+    'Preacher Curl',
+    'Hammer Curl',
+    'Face Pulls',
+    'Dumbbell Shrugs'
+  ],
+  legs: [
+    'Barbell Back Squat',
+    'Bulgarian Split Squat',
+    'Goblet Squat',
+    'Romanian Deadlift',
+    'Walking Lunges',
+    'Standing Calf Raise'
+  ]
+}
+
+// Sets config per exercise (warmup + working sets)
+const SET_CONFIG = {
+  'Incline Dumbbell Press':      { warmup: true, sets: 3, reps: '8–10' },
+  'Weighted Dips':               { warmup: true, sets: 3, reps: '8–10' },
+  'Cable Fly':                   { warmup: false, sets: 3, reps: '10–12' },
+  'Dumbbell Shoulder Press':     { warmup: true, sets: 3, reps: '8–10' },
+  'Lateral Raises':              { warmup: false, sets: 3, reps: '12–15' },
+  'EZ Bar Skull Crushers':       { warmup: false, sets: 3, reps: '8–10' },
+  'Cable Pushdown (Rope)':       { warmup: false, sets: 3, reps: '10–12' },
+  'Deadlift':                    { warmup: true, sets: 3, reps: '5–6' },
+  'Weighted Pull-ups':           { warmup: true, sets: 3, reps: '6–8' },
+  'Bent-over Barbell Row':       { warmup: true, sets: 3, reps: '8–10' },
+  'Lat Pulldown':                { warmup: false, sets: 3, reps: '10–12' },
+  'Straight-Arm Cable Pulldown': { warmup: false, sets: 3, reps: '12–15' },
+  'Incline Dumbbell Curl':       { warmup: false, sets: 3, reps: '10–12' },
+  'Preacher Curl':               { warmup: false, sets: 3, reps: '10–12' },
+  'Hammer Curl':                 { warmup: false, sets: 2, reps: '10–12' },
+  'Face Pulls':                  { warmup: false, sets: 3, reps: '15' },
+  'Dumbbell Shrugs':             { warmup: false, sets: 3, reps: '12–15' },
+  'Barbell Back Squat':          { warmup: true, sets: 4, reps: '6–8' },
+  'Bulgarian Split Squat':       { warmup: false, sets: 3, reps: '8–10' },
+  'Goblet Squat':                { warmup: false, sets: 3, reps: '10–12' },
+  'Romanian Deadlift':           { warmup: false, sets: 3, reps: '8–10' },
+  'Walking Lunges':              { warmup: false, sets: 3, reps: '10–12' },
+  'Standing Calf Raise':         { warmup: false, sets: 4, reps: '12–15' }
+}
+
+// ── UTILITIES ──────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById(id).classList.add('active')
+}
+
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = 'show' + (isError ? ' error' : '')
+  setTimeout(() => { el.className = '' }, 2800)
+}
+
+function today() {
+  return new Date().toISOString().split('T')[0]
+}
+
+function nowTime() {
+  return new Date().toTimeString().split(' ')[0]
+}
+
+// ── SETUP SCREEN LOGIC ─────────────────────────────────────
+document.querySelectorAll('#day-type-group .pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#day-type-group .pill').forEach(b => b.classList.remove('selected'))
+    btn.classList.add('selected')
+    state.dayType = btn.dataset.value
+    checkSetupReady()
+  })
+})
+
+document.querySelectorAll('#rotation-group .pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#rotation-group .pill').forEach(b => b.classList.remove('selected'))
+    btn.classList.add('selected')
+    state.rotation = btn.dataset.value
+    checkSetupReady()
+  })
+})
+
+function checkSetupReady() {
+  document.getElementById('start-btn').disabled = !(state.dayType && state.rotation)
+}
+
+document.getElementById('start-btn').addEventListener('click', startSession)
+
+// ── START SESSION ──────────────────────────────────────────
+async function startSession() {
+  document.getElementById('start-btn').disabled = true
+  document.getElementById('start-btn').textContent = 'Loading...'
+
+  try {
+    // 1. Create session row
+    const { data: session, error: sessErr } = await db
+      .from('sessions')
+      .insert({
+        date: today(),
+        day_type: state.dayType,
+        rotation: state.rotation,
+        start_time: nowTime()
+      })
+      .select()
+      .single()
+
+    if (sessErr) throw sessErr
+    state.sessionId = session.session_id
+
+    // 2. Load exercises for this day type
+    const { data: exercises, error: exErr } = await db
+      .from('exercises')
+      .select('*')
+      .eq('category', state.dayType)
+
+    if (exErr) throw exErr
+
+    // Sort by plan order
+    const order = EXERCISE_ORDER[state.dayType]
+    state.exercises = exercises.sort((a, b) =>
+      order.indexOf(a.name) - order.indexOf(b.name)
+    )
+
+    // 3. Load previous bests for each exercise
+    const exIds = state.exercises.map(e => e.exercise_id)
+    const { data: prevSets } = await db
+      .from('sets')
+      .select('exercise_id, weight_lbs, reps, session_id')
+      .in('exercise_id', exIds)
+      .eq('is_warmup', false)
+      .order('set_id', { ascending: false })
+
+    // Build a map of exercise_id → best recent set
+    const prevBests = {}
+    if (prevSets) {
+      prevSets.forEach(s => {
+        if (!prevBests[s.exercise_id]) {
+          prevBests[s.exercise_id] = s
+        }
+      })
+    }
+
+    // 4. Render exercise cards
+    renderExercises(prevBests)
+
+    // 5. Switch screen
+    document.getElementById('header-title').textContent =
+      `${capitalize(state.dayType)} ${state.rotation}`
+    document.getElementById('session-meta').textContent =
+      `${formatDate(today())} · Session #${session.session_id}`
+    showScreen('log-screen')
+
+  } catch (err) {
+    toast('Error starting session: ' + err.message, true)
+    console.error(err)
+    document.getElementById('start-btn').disabled = false
+    document.getElementById('start-btn').textContent = 'Start Session →'
+  }
+}
+
+// ── RENDER EXERCISES ───────────────────────────────────────
+function renderExercises(prevBests) {
+  const container = document.getElementById('exercises-container')
+  container.innerHTML = ''
+
+  // Group by muscle group for section labels
+  let lastGroup = null
+
+  state.exercises.forEach(ex => {
+    const config = SET_CONFIG[ex.name] || { warmup: false, sets: 3, reps: '8–12' }
+    state.setData[ex.exercise_id] = []
+
+    // Section label when muscle group changes
+    if (ex.muscle_group !== lastGroup) {
+      const label = document.createElement('div')
+      label.className = 'section-label'
+      label.textContent = ex.muscle_group.toUpperCase()
+      container.appendChild(label)
+      lastGroup = ex.muscle_group
+    }
+
+    // Build card
+    const card = document.createElement('div')
+    card.className = 'exercise-card'
+
+    const prev = prevBests[ex.exercise_id]
+    const prevText = prev
+      ? `Last: ${prev.weight_lbs} lbs × ${prev.reps} reps`
+      : 'No previous data'
+
+    card.innerHTML = `
+      <div class="exercise-header">
+        <div class="exercise-name">${ex.name}</div>
+        <div class="exercise-meta">${config.sets} × ${config.reps} · ${ex.movement_type}</div>
+        <div class="exercise-prev">${prevText}</div>
+      </div>
+      <div class="input-labels">
+        <span></span><span>lbs</span><span>reps</span><span style="font-size:9px">fail</span>
+      </div>
+    `
+
+    // Warmup set row
+    if (config.warmup) {
+      card.appendChild(buildSetRow(ex.exercise_id, 0, true))
+    }
+
+    // Working set rows
+    for (let i = 1; i <= config.sets; i++) {
+      card.appendChild(buildSetRow(ex.exercise_id, i, false))
+    }
+
+    container.appendChild(card)
+  })
+}
+
+function buildSetRow(exerciseId, setNum, isWarmup) {
+  const row = document.createElement('div')
+  row.className = 'set-row'
+
+  const numEl = document.createElement('div')
+  numEl.className = 'set-num' + (isWarmup ? ' warmup' : '')
+  numEl.textContent = isWarmup ? 'W' : setNum
+
+  const weightInput = document.createElement('input')
+  weightInput.type = 'number'
+  weightInput.placeholder = 'lbs'
+  weightInput.min = '0'
+  weightInput.step = '2.5'
+
+  const repsInput = document.createElement('input')
+  repsInput.type = 'number'
+  repsInput.placeholder = 'reps'
+  repsInput.min = '0'
+
+  const failBtn = document.createElement('button')
+  failBtn.className = 'fail-btn'
+  failBtn.title = 'Hit failure'
+  failBtn.textContent = '✕'
+  failBtn.addEventListener('click', () => failBtn.classList.toggle('active'))
+
+  // Store refs into state on input
+  function storeSet() {
+    if (!state.setData[exerciseId]) state.setData[exerciseId] = []
+    const idx = isWarmup ? 'w' : setNum - 1
+    state.setData[exerciseId][isWarmup ? 'warmup' : setNum - 1] = {
+      set_number: isWarmup ? 0 : setNum,
+      is_warmup: isWarmup,
+      weight_lbs: parseFloat(weightInput.value) || null,
+      reps: parseInt(repsInput.value) || null,
+      reached_failure: failBtn.classList.contains('active')
+    }
+  }
+
+  weightInput.addEventListener('change', storeSet)
+  repsInput.addEventListener('change', storeSet)
+  failBtn.addEventListener('click', storeSet)
+
+  row.appendChild(numEl)
+  row.appendChild(weightInput)
+  row.appendChild(repsInput)
+  row.appendChild(failBtn)
+
+  return row
+}
+
+// ── RPE SLIDER ─────────────────────────────────────────────
+document.getElementById('session-rpe').addEventListener('input', function () {
+  document.getElementById('rpe-display').textContent = this.value
+})
+
+// ── FINISH SESSION ─────────────────────────────────────────
+document.getElementById('finish-btn').addEventListener('click', finishSession)
+
+async function finishSession() {
+  const btn = document.getElementById('finish-btn')
+  btn.disabled = true
+  btn.textContent = 'Saving...'
+
+  try {
+    const rpe = parseInt(document.getElementById('session-rpe').value)
+    const notes = document.getElementById('session-notes').value.trim()
+
+    // 1. Update session with end time, RPE, notes
+    await db.from('sessions').update({
+      end_time: nowTime(),
+      perceived_exertion: rpe,
+      notes: notes || null
+    }).eq('session_id', state.sessionId)
+
+    // 2. Collect all set rows to insert
+    const setsToInsert = []
+
+    state.exercises.forEach(ex => {
+      const config = SET_CONFIG[ex.name] || { warmup: false, sets: 3 }
+      const totalSlots = config.sets + (config.warmup ? 1 : 0)
+
+      for (let i = 0; i < totalSlots; i++) {
+        const s = state.setData[ex.exercise_id]?.[i]
+        if (!s || s.weight_lbs === null || s.reps === null) continue
+        setsToInsert.push({
+          session_id: state.sessionId,
+          exercise_id: ex.exercise_id,
+          set_number: s.set_number,
+          is_warmup: s.is_warmup,
+          weight_lbs: s.weight_lbs,
+          reps: s.reps,
+          rpe: null,  // per-set RPE not collected in this version
+          reached_failure: s.reached_failure
+        })
+      }
+    })
+
+    if (setsToInsert.length === 0) {
+      toast('No sets logged — fill in at least one set first.', true)
+      btn.disabled = false
+      btn.textContent = 'Finish & Save Session'
+      return
+    }
+
+    const { error: setsErr } = await db.from('sets').insert(setsToInsert)
+    if (setsErr) throw setsErr
+
+    // 3. Show done screen
+    document.getElementById('done-summary').textContent =
+      `${setsToInsert.length} sets logged across ${state.exercises.length} exercises.`
+    showScreen('done-screen')
+
+  } catch (err) {
+    toast('Save failed: ' + err.message, true)
+    console.error(err)
+    btn.disabled = false
+    btn.textContent = 'Finish & Save Session'
+  }
+}
+
+// ── NEW SESSION ────────────────────────────────────────────
+document.getElementById('new-session-btn').addEventListener('click', () => {
+  state = { dayType: null, rotation: null, sessionId: null, exercises: [], setData: {} }
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('selected'))
+  document.getElementById('session-notes').value = ''
+  document.getElementById('session-rpe').value = 7
+  document.getElementById('rpe-display').textContent = '7'
+  document.getElementById('header-title').textContent = 'Start Session'
+  document.getElementById('session-meta').textContent = ''
+  document.getElementById('exercises-container').innerHTML = ''
+  document.getElementById('start-btn').disabled = true
+  document.getElementById('start-btn').textContent = 'Start Session →'
+  showScreen('setup-screen')
+})
+
+// ── HELPERS ────────────────────────────────────────────────
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1) }
+function formatDate(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric'
+  })
+}
+</script>
+</body>
+</html>
